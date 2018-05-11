@@ -24,7 +24,7 @@ class IndexHandler(web.RequestHandler):
 
 class SocketHandler(websocket.WebSocketHandler):
     """ Handler for websocket queries. """
-    
+
     def __init__(self, *args, **kwargs):
         """ Initialize the Redis store and framerate monitor. """
 

@@ -1,8 +1,7 @@
-"""
-Continuously capture images from a webcam and write to a Redis store.
-Usage:
-   python recorder.py [width] [height]
-"""
+import sys
+import numpy as np
+import cv2
+from naoqi import ALProxy
 
 import os
 import StringIO
@@ -10,56 +9,64 @@ import sys
 import time
 
 import coils
-import cv2
-import numpy as np
 import redis
 
+import Image
 
-# Retrieve command line arguments.
-width = None if len(sys.argv) <= 1 else int(sys.argv[1])
-height = None if len(sys.argv) <= 2 else int(sys.argv[2])
+videoDevice = ALProxy('ALVideoDevice', "192.168.1.10", 9559)
 
-# Create video capture object, retrying until successful.
-max_sleep = 5.0
-cur_sleep = 0.1
-while True:
-    cap = cv2.VideoCapture(-1)
-    if cap.isOpened():
-        break
-    print('not opened, sleeping {}s'.format(cur_sleep))
-    time.sleep(cur_sleep)
-    if cur_sleep < max_sleep:
-        cur_sleep *= 2
-        cur_sleep = min(cur_sleep, max_sleep)
-        continue
-    cur_sleep = 0.1
+AL_kTopCamera = 0
+AL_kQVGA = 1 # 320x2480
+AL_kBGRColorSpace = 13
+captureDevice = videoDevice.subscribeCamera("redis_cam1", AL_kTopCamera, AL_kQVGA, AL_kBGRColorSpace, 10)
 
-# Create client to the Redis store.
+width = 320
+height = 240
+image = np.zeros((height, width, 3), np.uint8)
+
 store = redis.Redis()
-
-# Set video dimensions, if given.
-if width: cap.set(3, width)
-if height: cap.set(4, height)
-
-# Monitor the framerate at 1s, 5s, 10s intervals.
 fps = coils.RateTicker((1, 5, 10))
 
-# Repeatedly capture current image, 
-# encode, serialize and push to Redis database.
-# Then create unique ID, and push to database as well.
+total_time = 0
 while True:
-    hello, image = cap.read()
-    if image is None:
-        time.sleep(0.5)
-        continue
-    hello, image = cv2.imencode('.jpg', image)
-    sio = StringIO.StringIO()
-    np.save(sio, image)
-    value = sio.getvalue()
-    store.set('image', value)
-    image_id = os.urandom(4)
-    store.set('image_id', image_id)
-    
-    # Print the framerate.
-    text = '{:.2f}, {:.2f}, {:.2f} fps'.format(*fps.tick())
-    print(text)
+    print("CYCLE TIME", time.time() - total_time)
+    total_time = time.time()
+
+    start_time = time.time()
+    result = videoDevice.getImageRemote(captureDevice);
+    print("EXEC TIME VIDEO: {}".format(time.time() - start_time))
+
+    if result == None:
+        print 'cannot capture.'
+    elif result[6] == None:
+        print 'no image data string.'
+    else:
+        # translate value to mat
+
+        # start_time = time.time()
+        # values = map(ord, list(result[6]))
+        # print("EXEC TIME MAP: {}".format(time.time() - start_time))
+
+        start_time = time.time()
+        n = Image.frombytes("RGB", (width, height), result[6])
+        print("EXEC TIME NP: {}".format(time.time() - start_time))
+        # start_time = time.time()
+        # reshape = n.reshape(height, width, 3)
+        # print("EXEC TIME NP RESHAPE: {}".format(time.time() - start_time))
+
+        encode_time = time.time()
+        open_cv_image = np.array(n)
+        hello, encoded_image = cv2.imencode('.jpg', open_cv_image)
+
+        sio = StringIO.StringIO()
+        np.save(sio, encoded_image)
+        # print("ENCODE TIME", time.time() - encode_time)
+        #
+        redis_time = time.time()
+        value = sio.getvalue()
+        store.set('image', value)
+        image_id = os.urandom(4)
+        store.set('image_id', image_id)
+        # print("REDIS TIME ", time.time() - redis_time)
+        # text = '{:.2f}, {:.2f}, {:.2f} fps'.format(*fps.tick())
+        # print(text)
