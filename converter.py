@@ -6,12 +6,11 @@ import base64
 from PIL import Image
 from io import BytesIO
 import cv2
-from StringIO import StringIO
 import numpy as np
 import threading
 from Queue import Queue
-
 import sys
+
 import sensor_msgs.msg
 import rospy
 
@@ -70,7 +69,7 @@ if __name__ == '__main__':
         reader = Read()
         reader.start()
 
-        ws = WSClient('ws://146.50.60.54:9000/ws')
+        ws = WSClient('ws://169.254.203.203:9000/ws')
         ws.connect()
         ws.run_forever()
     except KeyboardInterrupt:
